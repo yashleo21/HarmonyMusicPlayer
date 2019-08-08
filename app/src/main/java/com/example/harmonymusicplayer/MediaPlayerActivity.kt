@@ -63,11 +63,11 @@ class MediaPlayerActivity : AppCompatActivity() {
             connectionCallbacks,
             null
         )
+        mediaBrowser.connect()
     }
 
     override fun onStart() {
         super.onStart()
-        mediaBrowser.connect()
     }
 
     override fun onResume() {
@@ -77,9 +77,9 @@ class MediaPlayerActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
-        mediaController.unregisterCallback(controllerCallback)
-        mediaBrowser.unsubscribe(MediaPlayerActivity::class.simpleName ?: "MediaPlayerActivity")
-        mediaBrowser.disconnect()
+        //mediaController.unregisterCallback(controllerCallback)
+//        mediaBrowser.unsubscribe(MediaPlayerActivity::class.simpleName ?: "MediaPlayerActivity")
+//        mediaBrowser.disconnect()
     }
 
     fun buildTransportControls() {

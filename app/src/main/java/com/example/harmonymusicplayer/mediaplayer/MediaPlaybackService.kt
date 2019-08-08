@@ -1,6 +1,7 @@
 package com.example.harmonymusicplayer.mediaplayer
 
 import android.annotation.SuppressLint
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
@@ -77,6 +78,36 @@ class MediaPlaybackService: MediaBrowserServiceCompat() {
         MediaStyleHelper.from(this, mediaSession!!)
     }
 
+    val musicNotification by lazy {
+        notificationBuilder.run {
+            setSmallIcon(R.drawable.ic_launcher_background)
+            color = ContextCompat.getColor(this@MediaPlaybackService, R.color.colorPrimary)
+
+            addAction(
+                androidx.core.app.NotificationCompat.Action(
+                    R.drawable.ic_pause_black_24dp,
+                    getString(R.string.pause_text),
+                    MediaButtonReceiver.buildMediaButtonPendingIntent(
+                        this@MediaPlaybackService,
+                        PlaybackStateCompat.ACTION_PAUSE
+                    )
+                )
+            )
+
+            setStyle(
+                NotificationCompat.MediaStyle()
+                    .setShowActionsInCompactView(0)
+                    .setMediaSession(mediaSession?.sessionToken)
+                    .setShowCancelButton(true)
+                    .setCancelButtonIntent(MediaButtonReceiver.buildMediaButtonPendingIntent(
+                        this@MediaPlaybackService,
+                        PlaybackStateCompat.ACTION_STOP)
+                    ))
+
+            build()
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         mediaSession = MediaSessionCompat(this, LOG_TAG).apply {
@@ -143,42 +174,6 @@ class MediaPlaybackService: MediaBrowserServiceCompat() {
             NoisyMediaReceiver()
         }
 
-        private val musicNotification by lazy {
-            notificationBuilder.run {
-                setSmallIcon(R.drawable.ic_launcher_background)
-                color = ContextCompat.getColor(this@MediaPlaybackService, R.color.colorPrimary)
-
-                addAction(
-                    androidx.core.app.NotificationCompat.Action(
-                        R.drawable.ic_pause_black_24dp,
-                        getString(R.string.pause_text),
-                        MediaButtonReceiver.buildMediaButtonPendingIntent(
-                            this@MediaPlaybackService,
-                            PlaybackStateCompat.ACTION_PAUSE
-                        )
-                    )
-                )
-
-                addAction(
-                    androidx.core.app.NotificationCompat.Action(
-                        R.drawable.ic_play,
-                        getString(R.string.play_media),
-                        MediaButtonReceiver.buildMediaButtonPendingIntent(
-                            this@MediaPlaybackService,
-                            PlaybackStateCompat.ACTION_PLAY
-                        )
-                    )
-                )
-
-                setStyle(
-                    NotificationCompat.MediaStyle()
-                        .setShowActionsInCompactView(0)
-                        .setMediaSession(mediaSession?.sessionToken)
-                )
-                build()
-            }
-        }
-
         private val focusRequest by lazy {
                     AudioFocusRequest.Builder(AudioManagerCompat.AUDIOFOCUS_GAIN).run {
                         setAudioAttributes(
@@ -191,7 +186,6 @@ class MediaPlaybackService: MediaBrowserServiceCompat() {
                         setOnAudioFocusChangeListener(this@MediaSessionCallback, handler)
                         build()
                     }
-
         }
 
 
@@ -239,14 +233,26 @@ class MediaPlaybackService: MediaBrowserServiceCompat() {
                     }
                     AudioManager.AUDIOFOCUS_REQUEST_GRANTED -> {
                         //Start playback
-                        mediaPlayer.playFromMedia(mediaId)
-                        mediaPlayer.setOnCompletionListener(mediaPlaybackComplete)
+                        mediaPlayer.playFromMedia(mediaId, mediaPlaybackComplete)
+                        //mediaPlayer.setOnCompleteListener(mediaPlaybackComplete)
                         mediaSession?.setPlaybackState(stateBuilder.setState(PlaybackStateCompat.STATE_PLAYING,
                             0L, 1f).build())
                         mediaSession?.isActive = true
                         mediaSession?.setMetadata(musicLibraryFromPhone.getMetadata(this@MediaPlaybackService, mediaIden!!))
                         Log.d("Emre1s", "Audio focus granted")
                         onPlay()
+                        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                        if (VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            createNotificationChannel()
+                            notificationManager.createNotificationChannel(notificationChannel)
+                        }
+                        musicNotification.actions[0] = Notification.Action(R.drawable.ic_pause, getString(R.string.pause_text),
+                            MediaButtonReceiver.buildMediaButtonPendingIntent(
+                            this@MediaPlaybackService,
+                            PlaybackStateCompat.ACTION_PAUSE
+                        ))
+
+                        startForeground(NOTIFICATION_ID, musicNotification)
                         true
                     }
                     AudioManager.AUDIOFOCUS_REQUEST_DELAYED -> {
@@ -269,36 +275,14 @@ class MediaPlaybackService: MediaBrowserServiceCompat() {
             }
 
         override fun onPlay() {
-//            if (!isReadyToPlay()) {
-//                // Nothing to play.
-//                Log.d("Emre1s", "Nothing to play")
-//                mediaSession?.setPlaybackState(stateBuilder.setState(PlaybackStateCompat.STATE_NONE,
-//                    0L, 1f).build())
-//                return
-//            }
-//
-//            if (mPreparedMedia == null) {
-//                onPrepare()
-//            }
-//
-//            mediaPlayer.playFromMedia(mPreparedMedia)
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            if (VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                createNotificationChannel()
-                notificationManager.createNotificationChannel(notificationChannel)
-            }
-           // notificationManager.notify(NOTIFICATION_ID, notif)
-            startForeground(NOTIFICATION_ID, musicNotification)
+
             mediaPlayer.start()
             val intentFilter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
             registerReceiver(noisyReceiver, intentFilter)
             Log.d("Emre1s", "onPlayFromMediaId: MediaSession active")
             mediaSession?.setPlaybackState(stateBuilder.setState(PlaybackStateCompat.STATE_PLAYING,
                 0L, 1f).build())
-
         }
-
-
 
         private fun isReadyToPlay(): Boolean {
             return mPlaylist.isNotEmpty()
@@ -371,6 +355,11 @@ class MediaPlaybackService: MediaBrowserServiceCompat() {
 
     private val mediaPlaybackComplete = MediaPlayer.OnCompletionListener {
         Log.d("Emre1s", "Media Playback is complete")
+        musicNotification.actions[0] = Notification.Action(R.drawable.ic_play, getString(R.string.play_media), MediaButtonReceiver.buildMediaButtonPendingIntent(
+            this@MediaPlaybackService,
+            PlaybackStateCompat.ACTION_PLAY
+        ))
+        startForeground(NOTIFICATION_ID, musicNotification)
         mediaSession?.setPlaybackState(stateBuilder.setState(PlaybackStateCompat.STATE_STOPPED, 0L, 1f).build())
     }
 
